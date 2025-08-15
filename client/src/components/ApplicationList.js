@@ -25,7 +25,7 @@ function ApplicationList({ applications, onStatusUpdate }) {
 
   const handleStatusUpdate = async (id, newStatus) => {
     try {
-      await axios.post(`http://localhost:3000/applications/${id}/status`, { status: newStatus });
+      await axios.post(`/applications/${id}/status`, { status: newStatus });
       onStatusUpdate();
     } catch (error) {
       console.error('Error updating status:', error);
@@ -38,7 +38,7 @@ function ApplicationList({ applications, onStatusUpdate }) {
     setError(null);
     
     try {
-      const response = await axios.post(`http://localhost:3000/applications/${id}/regenerate-cover-letter`);
+      const response = await axios.post(`/applications/${id}/regenerate-cover-letter`);
       
       // Update the application in the list
       const updatedApplication = {

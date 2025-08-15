@@ -38,7 +38,7 @@ echo -e "${GREEN}✅ All prerequisites are installed${NC}"
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 REGION="us-east-1"
 PROJECT_NAME="job-application-tracker"
-S3_BUCKET="job-tracker-terraform-state"
+S3_BUCKET="job-tracker-terraform-state-${ACCOUNT_ID}"
 
 echo -e "${YELLOW}📋 Configuration:${NC}"
 echo "  AWS Account ID: $ACCOUNT_ID"

@@ -13,10 +13,11 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_lb_target_group" "app" {
-  name     = "${var.environment}-app-tg"
-  port     = var.app_port
-  protocol = "HTTP"
-  vpc_id   = var.vpc_id
+  name        = "${var.environment}-app-tg"
+  port        = var.app_port
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
 
   health_check {
     enabled             = true

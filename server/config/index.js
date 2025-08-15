@@ -11,7 +11,7 @@ module.exports = {
     corsOrigin: getEnv('CORS_ORIGIN', 'http://localhost:3001'),
   },
   temporal: {
-    address: getEnv('TEMPORAL_ADDRESS', 'localhost:7233'),
+    address: getEnv('TEMPORAL_ADDRESS', '10.0.3.205:7233'),
   },
   database: {
     host: getEnv('DB_HOST', 'localhost'),

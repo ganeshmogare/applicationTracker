@@ -241,3 +241,16 @@ keys/
 # Local development files
 local/
 dev/
+
+# Terraform build files
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+terraform.tfvars
+.terraformrc
+terraform.rc
+
+# Terraform provider binaries
+terraform/providers/
+terraform/.terraform/providers/

@@ -71,24 +71,32 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
 
-      secrets = [
-        {
-          name      = "EMAIL_SMTP_HOST"
-          valueFrom = aws_ssm_parameter.email_smtp_host.arn
-        },
-        {
-          name      = "EMAIL_SMTP_USER"
-          valueFrom = aws_ssm_parameter.email_smtp_user.arn
-        },
-        {
-          name      = "EMAIL_SMTP_PASS"
-          valueFrom = aws_ssm_parameter.email_smtp_pass.arn
-        },
-        {
-          name      = "GEMINI_API_KEY"
-          valueFrom = aws_ssm_parameter.gemini_api_key.arn
-        }
-      ]
+      secrets = concat(
+        var.email_smtp_host != "" ? [
+          {
+            name      = "EMAIL_SMTP_HOST"
+            valueFrom = aws_ssm_parameter.email_smtp_host[0].arn
+          }
+        ] : [],
+        var.email_smtp_user != "" ? [
+          {
+            name      = "EMAIL_SMTP_USER"
+            valueFrom = aws_ssm_parameter.email_smtp_user[0].arn
+          }
+        ] : [],
+        var.email_smtp_pass != "" ? [
+          {
+            name      = "EMAIL_SMTP_PASS"
+            valueFrom = aws_ssm_parameter.email_smtp_pass[0].arn
+          }
+        ] : [],
+        var.gemini_api_key != "" ? [
+          {
+            name      = "GEMINI_API_KEY"
+            valueFrom = aws_ssm_parameter.gemini_api_key[0].arn
+          }
+        ] : []
+      )
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -181,8 +189,9 @@ resource "aws_iam_role" "ecs_task_role" {
 }
 
 resource "aws_iam_role_policy" "ecs_task_role_policy" {
-  name = "${var.environment}-ecs-task-role-policy"
-  role = aws_iam_role.ecs_task_role.id
+  count = (var.email_smtp_host != "" || var.email_smtp_user != "" || var.email_smtp_pass != "" || var.gemini_api_key != "") ? 1 : 0
+  name  = "${var.environment}-ecs-task-role-policy"
+  role  = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -193,37 +202,41 @@ resource "aws_iam_role_policy" "ecs_task_role_policy" {
           "ssm:GetParameters",
           "secretsmanager:GetSecretValue"
         ]
-        Resource = [
-          aws_ssm_parameter.email_smtp_host.arn,
-          aws_ssm_parameter.email_smtp_user.arn,
-          aws_ssm_parameter.email_smtp_pass.arn,
-          aws_ssm_parameter.gemini_api_key.arn
-        ]
+        Resource = concat(
+          var.email_smtp_host != "" ? [aws_ssm_parameter.email_smtp_host[0].arn] : [],
+          var.email_smtp_user != "" ? [aws_ssm_parameter.email_smtp_user[0].arn] : [],
+          var.email_smtp_pass != "" ? [aws_ssm_parameter.email_smtp_pass[0].arn] : [],
+          var.gemini_api_key != "" ? [aws_ssm_parameter.gemini_api_key[0].arn] : []
+        )
       }
     ]
   })
 }
 
-# SSM Parameters for secrets
+# SSM Parameters for secrets (only create if values are provided)
 resource "aws_ssm_parameter" "email_smtp_host" {
+  count = var.email_smtp_host != "" ? 1 : 0
   name  = "/${var.environment}/email/smtp/host"
   type  = "SecureString"
   value = var.email_smtp_host
 }
 
 resource "aws_ssm_parameter" "email_smtp_user" {
+  count = var.email_smtp_user != "" ? 1 : 0
   name  = "/${var.environment}/email/smtp/user"
   type  = "SecureString"
   value = var.email_smtp_user
 }
 
 resource "aws_ssm_parameter" "email_smtp_pass" {
+  count = var.email_smtp_pass != "" ? 1 : 0
   name  = "/${var.environment}/email/smtp/pass"
   type  = "SecureString"
   value = var.email_smtp_pass
 }
 
 resource "aws_ssm_parameter" "gemini_api_key" {
+  count = var.gemini_api_key != "" ? 1 : 0
   name  = "/${var.environment}/gemini/api/key"
   type  = "SecureString"
   value = var.gemini_api_key

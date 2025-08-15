@@ -11,8 +11,8 @@ function App() {
   const fetchApplications = async () => {
     try {
       const [activeRes, archivedRes] = await Promise.all([
-        axios.get('http://localhost:3000/applications'),
-        axios.get('http://localhost:3000/applications/archived')
+        axios.get('/applications'),
+        axios.get('/applications/archived')
       ]);
       setApplications(activeRes.data);
       setArchivedApplications(archivedRes.data);

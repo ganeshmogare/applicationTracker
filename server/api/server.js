@@ -30,8 +30,16 @@ async function startServer() {
     app.use(express.static(path.join(__dirname, '../../client/build')));
   }
 
-  const connection = await Connection.connect({ address: config.temporal.address });
-  const client = new WorkflowClient({ connection });
+  let connection, client;
+  try {
+    connection = await Connection.connect({ address: config.temporal.address });
+    client = new WorkflowClient({ connection });
+    console.log('✅ Connected to Temporal server');
+  } catch (error) {
+    console.log('⚠️ Temporal server not available, running in database-only mode');
+    connection = null;
+    client = null;
+  }
 
   app.post('/applications', async (req, res) => {
     try {
@@ -39,15 +47,25 @@ async function startServer() {
       // Default deadline to 4 weeks if not provided
       const resolvedDeadline = deadline || new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString();
 
-      const handle = await client.start('applicationWorkflow', {
-        taskQueue: 'applicationQueue',
-        workflowId: `app_${Date.now()}`,
-        args: [{ company, role, jobDescription, resume, deadline: resolvedDeadline }],
-      });
+      let workflowId = `app_${Date.now()}`;
+      
+      // Start Temporal workflow if available
+      if (client) {
+        try {
+          const handle = await client.start('applicationWorkflow', {
+            taskQueue: 'applicationQueue',
+            workflowId: workflowId,
+            args: [{ company, role, jobDescription, resume, deadline: resolvedDeadline }],
+          });
+          workflowId = handle.workflowId;
+        } catch (error) {
+          console.log('⚠️ Temporal workflow failed, continuing with database only');
+        }
+      }
 
       // Store the application in database
       const application = {
-        workflowId: handle.workflowId,
+        workflowId: workflowId,
         company,
         role,
         jobDescription,
@@ -58,7 +76,7 @@ async function startServer() {
 
       await db.createApplication(application);
 
-      res.json({ workflowId: handle.workflowId });
+      res.json({ workflowId: workflowId });
     } catch (error) {
       console.error('Error creating application:', error);
       res.status(500).json({ error: 'Failed to create application' });
@@ -75,17 +93,6 @@ async function startServer() {
     }
   });
 
-  // Get archived applications - MOVED BEFORE /applications/:id
-  app.get('/applications/archived', async (req, res) => {
-    try {
-      const archivedList = await db.getArchivedApplications();
-      res.json(archivedList);
-    } catch (error) {
-      console.error('Error fetching archived applications:', error);
-      res.status(500).json({ error: 'Failed to fetch archived applications' });
-    }
-  });
-
   app.post('/applications/:id/status', async (req, res) => {
     try {
       const { status } = req.body;
@@ -94,14 +101,30 @@ async function startServer() {
       // Update the application in database
       await db.updateApplicationStatus(workflowId, status);
 
-      // Send signal to Temporal workflow
-      const handle = client.getHandle(workflowId);
-      await handle.signal('updateStatus', status);
-      
+      // Send signal to Temporal workflow if available
+      if (client) {
+        try {
+          const handle = client.getHandle(workflowId);
+          await handle.signal('updateStatus', status);
+        } catch (error) {
+          console.log('⚠️ Temporal signal failed, continuing with database only');
+        }
+      }
       res.json({ message: 'Status updated successfully' });
     } catch (error) {
       console.error('Error updating status:', error);
       res.status(500).json({ error: 'Failed to update status' });
+    }
+  });
+
+  // Get archived applications - MOVED BEFORE /applications/:id
+  app.get('/applications/archived', async (req, res) => {
+    try {
+      const archivedList = await db.getArchivedApplications();
+      res.json(archivedList);
+    } catch (error) {
+      console.error('Error fetching archived applications:', error);
+      res.status(500).json({ error: 'Failed to fetch archived applications' });
     }
   });
 
@@ -133,27 +156,22 @@ async function startServer() {
 
       console.log(`Starting cover letter generation for ${application.company} - ${application.role}`);
       
-      // Generate new cover letter
-      const { generateCoverLetter } = require('../activities/llmActivities');
-      const coverLetter = await generateCoverLetter({
-        company: application.company,
-        role: application.role,
-        jobDescription: application.job_description,
-        resume: application.resume
-      });
-
-      console.log(`Cover letter generated successfully for ${application.company} - ${application.role}`);
-
-      // Store the new cover letter
-      await db.updateCoverLetter(workflowId, coverLetter);
-
+      // Import and use the LLM activities
+      const { generateCoverLetter, updateCoverLetter } = require('../activities/llmActivities');
+      
+      // Generate the cover letter
+      const coverLetter = await generateCoverLetter(application);
+      
+      // Update the database with the new cover letter
+      await updateCoverLetter(workflowId, coverLetter);
+      
       res.json({ 
-        message: 'Cover letter regenerated successfully',
-        coverLetter 
+        message: 'Cover letter generated successfully',
+        coverLetter: coverLetter
       });
     } catch (error) {
-      console.error('Error regenerating cover letter:', error);
-      res.status(500).json({ error: 'Failed to regenerate cover letter' });
+      console.error('Error in regenerate cover letter endpoint:', error);
+      res.status(500).json({ error: 'Failed to generate cover letter' });
     }
   });
 
@@ -162,31 +180,36 @@ async function startServer() {
     try {
       const workflowId = req.params.id;
       
-      // Return immediately
-      res.json({ message: 'Cover letter generation started in background' });
+      // Get the application data
+      const application = await db.getApplicationById(workflowId);
+      if (!application) {
+        return res.status(404).json({ error: 'Application not found' });
+      }
+
+      console.log(`Starting background cover letter generation for ${application.company} - ${application.role}`);
       
-      // Generate in background
-      setTimeout(async () => {
+      // Import and use the LLM activities
+      const { generateCoverLetter, updateCoverLetter } = require('../activities/llmActivities');
+      
+      // Start the generation in the background (don't await)
+      generateCoverLetter(application).then(async (coverLetter) => {
         try {
-          const application = await db.getApplicationById(workflowId);
-          if (application) {
-            const { generateCoverLetter } = require('../activities/llmActivities');
-            const coverLetter = await generateCoverLetter({
-              company: application.company,
-              role: application.role,
-              jobDescription: application.job_description,
-              resume: application.resume
-            });
-            await db.updateCoverLetter(workflowId, coverLetter);
-            console.log(`Background cover letter generated for ${application.company}`);
-          }
+          await updateCoverLetter(workflowId, coverLetter);
+          console.log('Background cover letter generation completed successfully');
         } catch (error) {
-          console.error('Background cover letter generation failed:', error);
+          console.error('Error updating cover letter in background:', error);
         }
-      }, 100);
+      }).catch((error) => {
+        console.error('Error in background cover letter generation:', error);
+      });
       
+      res.json({ 
+        message: 'Cover letter generation started in background',
+        note: 'The cover letter will be generated and saved automatically'
+      });
     } catch (error) {
-      console.error('Error starting background generation:', error);
+      console.error('Error in background generation endpoint:', error);
+      res.status(500).json({ error: 'Failed to start background generation' });
     }
   });
 
@@ -195,15 +218,72 @@ async function startServer() {
     res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
   });
 
-  // Serve React app for all non-API routes in production
+  // Test email functionality
+  app.post('/test-email', async (req, res) => {
+    try {
+      const { sendReminder } = require('../activities/llmActivities');
+      
+      const testApplication = {
+        company: 'Test Company',
+        role: 'Test Role',
+        deadline: new Date().toISOString()
+      };
+      
+      console.log('Testing email functionality...');
+      const result = await sendReminder(testApplication, 'test');
+      
+      res.json({ 
+        message: 'Email test completed',
+        result: result,
+        note: 'Check your email inbox for the test message'
+      });
+    } catch (error) {
+      console.error('Error testing email:', error);
+      res.status(500).json({ error: 'Failed to test email functionality' });
+    }
+  });
+
+  // Serve React app for the root path and other non-API routes in production
   if (process.env.NODE_ENV === 'production') {
+    app.get('/', (req, res) => {
+      try {
+        res.sendFile(path.join(__dirname, '../../client/build/index.html'));
+      } catch (error) {
+        console.error('Error serving React app:', error);
+        res.status(500).json({ error: 'Failed to serve application' });
+      }
+    });
+    
+    // Catch-all for other non-API routes (but not /applications/*)
     app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, '../../client/build/index.html'));
+      if (req.path.startsWith('/applications')) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+      try {
+        res.sendFile(path.join(__dirname, '../../client/build/index.html'));
+      } catch (error) {
+        console.error('Error serving React app:', error);
+        res.status(500).json({ error: 'Failed to serve application' });
+      }
     });
   }
 
   app.listen(config.server.port, () => {
     console.log(`Server running at http://localhost:${config.server.port}`);
+    console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+    console.log(`Environment variables:`, {
+      NODE_ENV: process.env.NODE_ENV,
+      DB_HOST: process.env.DB_HOST,
+      DB_NAME: process.env.DB_NAME,
+      SERVER_PORT: process.env.SERVER_PORT,
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY ? 'SET' : 'MISSING',
+      GEMINI_MODEL: process.env.GEMINI_MODEL,
+      EMAIL_SMTP_HOST: process.env.EMAIL_SMTP_HOST ? 'SET' : 'MISSING',
+      EMAIL_SMTP_USER: process.env.EMAIL_SMTP_USER ? 'SET' : 'MISSING',
+      EMAIL_SMTP_PASS: process.env.EMAIL_SMTP_PASS ? 'SET' : 'MISSING',
+      EMAIL_FROM: process.env.EMAIL_FROM,
+      EMAIL_TO: process.env.EMAIL_TO
+    });
   });
 }
 

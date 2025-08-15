@@ -1,0 +1,23 @@
+# Use a base image with required libraries for Temporal
+FROM node:18-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY server/package*.json ./server/
+
+# Install dependencies
+RUN npm ci --prefix server --only=production
+
+# Copy server code
+COPY server/ ./server/
+
+# Set working directory to server
+WORKDIR /app/server
+
+# Expose port (not needed for worker but good practice)
+EXPOSE 3000
+
+# Start the worker
+CMD ["npm", "run", "worker"]
