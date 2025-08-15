@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-temporal}
+      POSTGRES_USER: ${DB_USER:-temporal}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-temporal}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-temporal}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Temporal Server
+  temporal:
+    image: temporalio/auto-setup:1.22.3
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=${DB_USER:-temporal}
+      - POSTGRES_PWD=${DB_PASSWORD:-temporal}
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "7233:7233"
+    volumes:
+      - ./docker-compose/dynamicconfig:/etc/temporal/config/dynamicconfig
+
+  # Application Server
+  app:
+    build: .
+    environment:
+      - NODE_ENV=production
+      - API_PORT=3000
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+      - TEMPORAL_ADDRESS=temporal:7233
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-temporal}
+      - DB_PASSWORD=${DB_PASSWORD:-temporal}
+      - DB_NAME=${DB_NAME:-temporal}
+      - EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST}
+      - EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+      - EMAIL_SMTP_USER=${EMAIL_SMTP_USER}
+      - EMAIL_SMTP_PASS=${EMAIL_SMTP_PASS}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - EMAIL_TO=${EMAIL_TO}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-1.5-flash}
+    depends_on:
+      temporal:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Temporal Worker
+  worker:
+    build: .
+    command: ["npm", "run", "worker"]
+    environment:
+      - NODE_ENV=production
+      - TEMPORAL_ADDRESS=temporal:7233
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-temporal}
+      - DB_PASSWORD=${DB_PASSWORD:-temporal}
+      - DB_NAME=${DB_NAME:-temporal}
+      - EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST}
+      - EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+      - EMAIL_SMTP_USER=${EMAIL_SMTP_USER}
+      - EMAIL_SMTP_PASS=${EMAIL_SMTP_PASS}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - EMAIL_TO=${EMAIL_TO}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-1.5-flash}
+    depends_on:
+      temporal:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./server:/app/server
+
+volumes:
+  postgres_data:

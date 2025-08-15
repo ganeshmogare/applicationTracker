@@ -38,6 +38,82 @@ cd docker-compose
 docker-compose -f docker-compose-postgres.yml up -d
 ```
 
+## 🚀 Cloud Deployment
+
+### Option 1: AWS with Infrastructure as Code (Recommended)
+
+#### Prerequisites
+- AWS Account with free tier access
+- AWS CLI, Terraform, and Docker installed
+- GitHub repository with secrets configured
+
+#### Quick Setup
+```bash
+# Run the automated setup script
+./setup-aws.sh
+
+# Follow the prompts to configure your environment
+```
+
+#### Manual Setup
+```bash
+# 1. Configure AWS credentials
+aws configure
+
+# 2. Create S3 bucket for Terraform state
+aws s3 mb s3://job-tracker-terraform-state --region us-east-1
+
+# 3. Deploy infrastructure
+cd terraform
+terraform init
+terraform plan -var="environment=production" -var="db_password=your-password"
+terraform apply
+
+# 4. Push to GitHub to trigger CI/CD
+git push origin main
+```
+
+#### CI/CD Pipeline
+- **Automatic deployment** on push to `main` branch
+- **Security scanning** with Trivy
+- **Health checks** and automatic rollback
+- **Multi-environment** support (dev/prod)
+
+### Option 2: Docker Compose (Local/Simple)
+
+#### Prerequisites
+- Docker and Docker Compose installed
+- Environment variables configured (see `env.production.example`)
+
+#### Quick Deployment
+```bash
+# 1. Configure environment variables
+cp env.production.example .env.production
+# Edit .env.production with your values
+
+# 2. Deploy
+./deploy.sh
+```
+
+#### Manual Deployment
+```bash
+# Build and start services
+docker-compose -f docker-compose.prod.yml up -d
+
+# Check status
+docker-compose -f docker-compose.prod.yml ps
+
+# View logs
+docker-compose -f docker-compose.prod.yml logs -f app
+```
+
+### Supported Cloud Platforms
+- **AWS**: ECS Fargate with ALB and RDS (IaC provided)
+- **Google Cloud**: Cloud Run or GKE
+- **Azure**: Container Instances or AKS
+- **DigitalOcean**: App Platform or Droplets
+- **Heroku**: Container Registry and Dynos
+
 ### 2. Install Dependencies
 
 ```bash

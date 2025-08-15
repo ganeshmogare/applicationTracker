@@ -1,0 +1,263 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: job-application-tracker
+  ECS_CLUSTER: production-cluster
+  ECS_SERVICE: production-app-service
+
+jobs:
+  # Test and Build
+  test-and-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: |
+          server/package-lock.json
+          client/package-lock.json
+
+    - name: Install server dependencies
+      run: |
+        cd server
+        npm ci
+
+    - name: Install client dependencies
+      run: |
+        cd client
+        npm ci
+
+    - name: Run server tests
+      run: |
+        cd server
+        npm test --if-present
+
+    - name: Run client tests
+      run: |
+        cd client
+        npm test --if-present --watchAll=false
+
+    - name: Build client
+      run: |
+        cd client
+        npm run build
+
+    - name: Build Docker image
+      run: |
+        docker build -t $ECR_REPOSITORY:${{ github.sha }} .
+        docker build -t $ECR_REPOSITORY:latest .
+
+  # Security Scan
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: test-and-build
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: $ECR_REPOSITORY:${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Deploy to Development
+  deploy-dev:
+    runs-on: ubuntu-latest
+    needs: [test-and-build, security-scan]
+    if: github.ref == 'refs/heads/develop'
+    environment: development
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:dev .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:dev
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.5.0"
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan \
+          -var="environment=dev" \
+          -var="app_image=${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}" \
+          -var="db_password=${{ secrets.DB_PASSWORD }}" \
+          -var="email_smtp_host=${{ secrets.EMAIL_SMTP_HOST }}" \
+          -var="email_smtp_user=${{ secrets.EMAIL_SMTP_USER }}" \
+          -var="email_smtp_pass=${{ secrets.EMAIL_SMTP_PASS }}" \
+          -var="gemini_api_key=${{ secrets.GEMINI_API_KEY }}" \
+          -out=tfplan
+
+    - name: Terraform Apply
+      run: |
+        cd terraform
+        terraform apply tfplan
+
+    - name: Wait for deployment
+      run: |
+        aws ecs wait services-stable \
+          --cluster dev-cluster \
+          --services dev-app-service \
+          --region ${{ env.AWS_REGION }}
+
+    - name: Health check
+      run: |
+        ALB_DNS=$(terraform -chdir=terraform output -raw alb_dns_name)
+        curl -f http://$ALB_DNS/health || exit 1
+
+  # Deploy to Production
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: [test-and-build, security-scan]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.5.0"
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan \
+          -var="environment=production" \
+          -var="app_image=${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}" \
+          -var="db_password=${{ secrets.DB_PASSWORD }}" \
+          -var="email_smtp_host=${{ secrets.EMAIL_SMTP_HOST }}" \
+          -var="email_smtp_user=${{ secrets.EMAIL_SMTP_USER }}" \
+          -var="email_smtp_pass=${{ secrets.EMAIL_SMTP_PASS }}" \
+          -var="gemini_api_key=${{ secrets.GEMINI_API_KEY }}" \
+          -out=tfplan
+
+    - name: Terraform Apply
+      run: |
+        cd terraform
+        terraform apply tfplan
+
+    - name: Wait for deployment
+      run: |
+        aws ecs wait services-stable \
+          --cluster production-cluster \
+          --services production-app-service \
+          --region ${{ env.AWS_REGION }}
+
+    - name: Health check
+      run: |
+        ALB_DNS=$(terraform -chdir=terraform output -raw alb_dns_name)
+        curl -f http://$ALB_DNS/health || exit 1
+
+    - name: Notify deployment success
+      if: success()
+      run: |
+        echo "🚀 Production deployment successful!"
+        echo "Application URL: http://$(terraform -chdir=terraform output -raw alb_dns_name)"
+
+  # Rollback on failure
+  rollback:
+    runs-on: ubuntu-latest
+    needs: [deploy-prod]
+    if: failure() && github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Rollback ECS service
+      run: |
+        aws ecs update-service \
+          --cluster production-cluster \
+          --service production-app-service \
+          --force-new-deployment \
+          --region ${{ env.AWS_REGION }}
+
+    - name: Notify rollback
+      run: |
+        echo "⚠️ Production deployment failed, rolling back to previous version"

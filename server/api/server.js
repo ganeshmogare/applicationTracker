@@ -24,6 +24,12 @@ async function startServer() {
   
   app.use(bodyParser.json());
 
+  // Serve static files from React build in production
+  if (process.env.NODE_ENV === 'production') {
+    const path = require('path');
+    app.use(express.static(path.join(__dirname, '../../client/build')));
+  }
+
   const connection = await Connection.connect({ address: config.temporal.address });
   const client = new WorkflowClient({ connection });
 
@@ -183,6 +189,18 @@ async function startServer() {
       console.error('Error starting background generation:', error);
     }
   });
+
+  // Health check endpoint for cloud deployment
+  app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
+  });
+
+  // Serve React app for all non-API routes in production
+  if (process.env.NODE_ENV === 'production') {
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(__dirname, '../../client/build/index.html'));
+    });
+  }
 
   app.listen(config.server.port, () => {
     console.log(`Server running at http://localhost:${config.server.port}`);
