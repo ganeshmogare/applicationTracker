@@ -63,3 +63,49 @@ variable "domain_name" {
   type        = string
   default     = ""
 }
+
+variable "email_smtp_host" {
+  description = "Email SMTP host"
+  type        = string
+  default     = "smtp.sendgrid.net"
+}
+
+variable "email_smtp_port" {
+  description = "Email SMTP port"
+  type        = string
+  default     = "587"
+}
+
+variable "email_smtp_user" {
+  description = "Email SMTP user"
+  type        = string
+  default     = "apikey"
+}
+
+variable "email_smtp_pass" {
+  description = "Email SMTP password"
+  type        = string
+  sensitive   = true
+}
+
+variable "email_from" {
+  description = "Email from address"
+  type        = string
+}
+
+variable "email_to" {
+  description = "Email to address"
+  type        = string
+}
+
+variable "gemini_api_key" {
+  description = "Gemini API key"
+  type        = string
+  sensitive   = true
+}
+
+variable "gemini_model" {
+  description = "Gemini model"
+  type        = string
+  default     = "gemini-1.5-flash"
+}

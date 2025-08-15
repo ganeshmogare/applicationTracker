@@ -128,15 +128,15 @@ module "worker" {
   db_user     = var.db_username
   db_password = var.db_password
 
-  email_smtp_host = "smtp.sendgrid.net"
-  email_smtp_port = "587"
-  email_smtp_user = "apikey"
-  email_smtp_pass = "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"
-  email_from      = "ganumogare18@gmail.com"
-  email_to        = "mogriganpati18@gmail.com"
+  email_smtp_host = var.email_smtp_host
+  email_smtp_port = var.email_smtp_port
+  email_smtp_user = var.email_smtp_user
+  email_smtp_pass = var.email_smtp_pass
+  email_from      = var.email_from
+  email_to        = var.email_to
   
-  gemini_api_key = "AIzaSyAlgwAPLcDrHn8QgovZhXNT2Eyv4WjJ4-o"
-  gemini_model   = "gemini-1.5-flash"
+  gemini_api_key = var.gemini_api_key
+  gemini_model   = var.gemini_model
 
   depends_on = [module.vpc, module.rds, module.temporal]
 }
