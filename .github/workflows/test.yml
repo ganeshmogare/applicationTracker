@@ -23,19 +23,17 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
-        cache-dependency-path: |
-          server/package-lock.json
-          client/package-lock.json
+        cache-dependency-path: '**/package-lock.json'
 
     - name: Install server dependencies
       run: |
         cd server
-        npm ci
+        npm ci --prefer-offline --no-audit
 
     - name: Install client dependencies
       run: |
         cd client
-        npm ci
+        npm ci --prefer-offline --no-audit
 
     - name: Run server tests
       run: |
