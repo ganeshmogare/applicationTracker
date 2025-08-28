@@ -5,27 +5,35 @@ const db = require('../database');
 
 async function startServer() {
   const app = express();
-  
+
   // Initialize database
   await db.initializeDatabase();
-  
+
   // Enable CORS for frontend
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', config.server.corsOrigin);
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header(
+      'Access-Control-Allow-Methods',
+      'GET, POST, PUT, DELETE, OPTIONS'
+    );
+    res.header(
+      'Access-Control-Allow-Headers',
+      'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    );
     if (req.method === 'OPTIONS') {
       res.sendStatus(200);
     } else {
       next();
     }
   });
-  
+
   app.use(bodyParser.json());
 
   // Basic endpoints
   app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
+    res
+      .status(200)
+      .json({ status: 'healthy', timestamp: new Date().toISOString() });
   });
 
   app.get('/applications', async (req, res) => {
@@ -41,21 +49,23 @@ async function startServer() {
   app.post('/applications', async (req, res) => {
     try {
       const { company, role, jobDescription, resume, deadline } = req.body;
-      const resolvedDeadline = deadline || new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString();
+      const resolvedDeadline =
+        deadline ||
+        new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString();
       const workflowId = `app_${Date.now()}`;
 
       const application = {
-        workflowId: workflowId,
+        workflowId,
         company,
         role,
         jobDescription,
         resume,
         deadline: resolvedDeadline,
-        status: 'Applied'
+        status: 'Applied',
       };
 
       await db.createApplication(application);
-      res.json({ workflowId: workflowId });
+      res.json({ workflowId });
     } catch (error) {
       console.error('Error creating application:', error);
       res.status(500).json({ error: 'Failed to create application' });

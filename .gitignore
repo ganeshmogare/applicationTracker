@@ -89,8 +89,21 @@ tmp/
 temp/
 
 # Logs
-logs
+logs/
 *.log
+*.log.*
+log/
+server/logs/
+client/logs/
+api-*.log
+application-*.log
+database-*.log
+error-*.log
+combined-*.log
+access-*.log
+debug-*.log
+info-*.log
+warn-*.log
 
 # Runtime data
 pids
@@ -255,3 +268,167 @@ terraform.rc
 # Terraform provider binaries
 terraform/providers/
 terraform/.terraform/providers/
+
+# Winston audit files
+*-audit.json
+.audit.json
+
+# Docker compose override files
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Local environment files
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Temporary and cache files
+.tmp/
+.cache/
+*.tmp
+*.cache
+
+# OS specific files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Editor and IDE files
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.idea/shelf/
+
+# Backup and swap files
+*~
+*.swp
+*.swo
+*.bak
+*.backup
+*.old
+*.orig
+
+# Test coverage and reports
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+cobertura-coverage.xml
+
+# Build and dist files
+dist/
+build/
+out/
+.next/
+.nuxt/
+.vuepress/dist/
+
+# Package manager files
+yarn-error.log
+npm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime files
+.pids
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache
+.cache
+.parcel-cache
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# Database files (already covered but more specific)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Application specific
+server/data/
+client/build/
+client/dist/
+
+# Docker volumes and data
+docker-volumes/
+docker-data/
+
+# API keys and secrets
+secrets/
+keys/
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.csr
+
+# Local development files
+local/
+dev/
+development/
+
+# Monitoring and metrics
+metrics/
+monitoring/

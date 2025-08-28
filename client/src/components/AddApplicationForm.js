@@ -6,7 +6,7 @@ import {
   TextField,
   Typography,
   Stack,
-  Paper
+  Paper,
 } from '@mui/material';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 
@@ -19,14 +19,14 @@ export default function AddApplicationForm({ onApplicationAdded }) {
     deadline: '',
   });
 
-  const handleChange = (e) => {
+  const handleChange = e => {
     setForm({
       ...form,
       [e.target.name]: e.target.value,
     });
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async e => {
     e.preventDefault();
     try {
       const app = await createApplication(form);

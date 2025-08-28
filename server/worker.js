@@ -1,6 +1,5 @@
 const { Worker } = require('@temporalio/worker');
-const { Connection } = require('@temporalio/client');
-const config = require('./config');
+const { application } = require('./utils/logger');
 
 async function run() {
   const worker = await Worker.create({
@@ -9,11 +8,11 @@ async function run() {
     taskQueue: 'applicationQueue',
   });
 
-  console.log('Worker started...');
+  application.info('Temporal worker started successfully');
   await worker.run();
 }
 
-run().catch((err) => {
-  console.error(err);
+run().catch(err => {
+  application.error('Worker failed to start', { error: err });
   process.exit(1);
 });

@@ -1,5 +1,6 @@
 const axios = require('axios');
 const config = require('../config');
+const { application } = require('../utils/logger');
 
 // Simple in-memory cache for cover letters
 const coverLetterCache = new Map();
@@ -7,10 +8,13 @@ const coverLetterCache = new Map();
 async function generateCoverLetter(applicationData) {
   // Create a cache key based on company, role, and job description
   const cacheKey = `${applicationData.company}-${applicationData.role}-${applicationData.jobDescription?.substring(0, 100)}`;
-  
+
   // Check cache first
   if (coverLetterCache.has(cacheKey)) {
-    console.log('Returning cached cover letter for:', applicationData.company, applicationData.role);
+    application.info('Returning cached cover letter', {
+      company: applicationData.company,
+      role: applicationData.role
+    });
     return coverLetterCache.get(cacheKey);
   }
 
@@ -28,27 +32,30 @@ Please write a compelling cover letter that:
 Keep it concise (around 300-400 words) and professional.`;
 
   try {
-    const apiKey = config.gemini.apiKey;
-    const model = config.gemini.model;
+    const { apiKey } = config.gemini;
+    const { model } = config.gemini;
 
     // Prefer Gemini when API key is configured; otherwise fall back to mock
     if (apiKey) {
-      console.log('Generating cover letter via Gemini for:', applicationData.company, applicationData.role);
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const response = await axios.post(url, {
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
+      const response = await axios.post(
+        url,
+        {
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 700,
           },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 700,
         },
-      }, {
-        timeout: 10000, // Reduced from 20 seconds to 10 seconds
-      });
+        {
+          timeout: 10000, // Reduced from 20 seconds to 10 seconds
+        }
+      );
 
       const candidates = response?.data?.candidates || [];
       const text = candidates[0]?.content?.parts?.[0]?.text;
@@ -58,9 +65,9 @@ Keep it concise (around 300-400 words) and professional.`;
         coverLetterCache.set(cacheKey, coverLetter);
         return coverLetter;
       }
-      console.warn('Gemini response did not contain expected text. Falling back to mock.');
+      application.warn('Gemini response did not contain expected text. Falling back to mock.');
     } else {
-      console.warn('GEMINI_API_KEY not set. Using mock cover letter.');
+      application.warn('GEMINI_API_KEY not set. Using mock cover letter.');
     }
 
     // Mock response fallback
@@ -79,14 +86,13 @@ Thank you for considering my application. I look forward to the opportunity to d
 Best regards,
 [Your Name]`;
 
-    console.log('Cover letter generated successfully');
+    application.info('Cover letter generated successfully');
     // Cache the mock result too
     coverLetterCache.set(cacheKey, mockCoverLetter);
     return mockCoverLetter;
-    
   } catch (error) {
-    console.error('Error generating cover letter:', error.message);
-    
+    application.error('Error generating cover letter', { error: error.message });
+
     // Return a fallback cover letter if API fails
     const fallbackCoverLetter = `Dear Hiring Manager,
 
@@ -96,7 +102,7 @@ Thank you for your consideration.
 
 Best regards,
 [Your Name]`;
-    
+
     // Cache the fallback too
     coverLetterCache.set(cacheKey, fallbackCoverLetter);
     return fallbackCoverLetter;
@@ -109,12 +115,12 @@ module.exports = { generateCoverLetter };
 const nodemailer = require('nodemailer');
 
 function buildTransport() {
-  const host = config.email.host;
-  const port = config.email.port;
-  const user = config.email.user;
-  const pass = config.email.pass;
+  const { host } = config.email;
+  const { port } = config.email;
+  const { user } = config.email;
+  const { pass } = config.email;
   if (!host || !user || !pass) {
-    console.warn('Email transport not fully configured; falling back to console logs');
+    application.warn('Email transport not fully configured; falling back to console logs');
     return null;
   }
   return nodemailer.createTransport({
@@ -127,29 +133,39 @@ function buildTransport() {
 
 async function sendReminder(applicationData, reason) {
   try {
-    console.log(`[Reminder:${reason}] ${applicationData.company} - ${applicationData.role} (deadline: ${applicationData.deadline})`);
-    
+    application.info('Sending reminder email', {
+      reason,
+      company: applicationData.company,
+      role: applicationData.role,
+      deadline: applicationData.deadline
+    });
+
     // Debug email configuration
-    console.log('Email config check:');
-    console.log('- EMAIL_SMTP_HOST:', config.email.host ? 'SET' : 'MISSING');
-    console.log('- EMAIL_SMTP_USER:', config.email.user ? 'SET' : 'MISSING');
-    console.log('- EMAIL_SMTP_PASS:', config.email.pass ? 'SET' : 'MISSING');
-    console.log('- EMAIL_FROM:', config.email.from || 'NOT SET (will use user)');
-    console.log('- EMAIL_TO:', config.email.to || 'NOT SET (will use user)');
-    
+    application.debug('Email configuration check', {
+      smtpHost: config.email.host ? 'SET' : 'MISSING',
+      smtpUser: config.email.user ? 'SET' : 'MISSING',
+      smtpPass: config.email.pass ? 'SET' : 'MISSING',
+      emailFrom: config.email.from || 'NOT SET (will use user)',
+      emailTo: config.email.to || 'NOT SET (will use user)'
+    });
+
     const recipient = config.email.to || config.email.user;
     const from = config.email.from || config.email.user;
     const transport = buildTransport();
-    
-    console.log('Transport created:', transport ? 'YES' : 'NO');
-    console.log('Recipient:', recipient || 'MISSING');
-    
+
+    application.debug('Email transport status', {
+      transportCreated: transport ? 'YES' : 'NO',
+      recipient: recipient || 'MISSING'
+    });
+
     if (transport && recipient) {
       const subjectMap = {
         'pre-deadline': `Reminder: ${applicationData.role} @ ${applicationData.company} deadline tomorrow`,
         'deadline-reached': `Action needed: ${applicationData.role} @ ${applicationData.company} deadline reached`,
       };
-      const subject = subjectMap[reason] || `Reminder: ${applicationData.role} @ ${applicationData.company}`;
+      const subject =
+        subjectMap[reason] ||
+        `Reminder: ${applicationData.role} @ ${applicationData.company}`;
       const html = `
         <p>Hi,</p>
         <p>This is a reminder for your application:</p>
@@ -161,52 +177,61 @@ async function sendReminder(applicationData, reason) {
         <p>Status is still <strong>Applied</strong>. Consider updating the status or doing a follow-up.</p>
         <p>— Application Tracker</p>
       `;
-      
-      console.log('Attempting to send email...');
-      console.log('- From:', from);
-      console.log('- To:', recipient);
-      console.log('- Subject:', subject);
-      
+
+      application.info('Attempting to send email', {
+        from,
+        to: recipient,
+        subject
+      });
+
       await transport.sendMail({ from, to: recipient, subject, html });
-      console.log('✅ Email reminder sent successfully to', recipient);
+      application.info('Email reminder sent successfully', { recipient });
     } else {
-      console.log('❌ Email not sent: transport or recipient missing');
-      if (!transport) console.log('  - Transport creation failed');
-      if (!recipient) console.log('  - Recipient email missing');
+      application.warn('Email not sent: transport or recipient missing', {
+        transportMissing: !transport,
+        recipientMissing: !recipient
+      });
     }
     return { ok: true };
   } catch (err) {
-    console.error('❌ sendReminder failed:', err?.message || err);
+    application.error('sendReminder failed', { error: err?.message || err });
     return { ok: false };
   }
 }
 
 async function archiveApplication(applicationData) {
   try {
-    console.log(`[Archive] ${applicationData.company} - ${applicationData.role}`);
-    console.log('✅ Application archived successfully');
+    application.info('Application archived', {
+      company: applicationData.company,
+      role: applicationData.role
+    });
     // Hook: mark archived in DB/emit event
     return { ok: true };
   } catch (err) {
-    console.error('❌ archiveApplication failed:', err?.message || err);
+    application.error('archiveApplication failed', { error: err?.message || err });
     return { ok: false };
   }
 }
 
 async function updateCoverLetter(workflowId, coverLetter) {
   try {
-    console.log(`[UpdateCoverLetter] Storing cover letter for workflow: ${workflowId}`);
-    
+    application.info('Storing cover letter', { workflowId });
+
     // Import the database module
     const db = require('../database');
     await db.updateCoverLetter(workflowId, coverLetter);
-    
-    console.log('✅ Cover letter stored successfully');
+
+    application.info('Cover letter stored successfully', { workflowId });
     return { ok: true };
   } catch (err) {
-    console.error('❌ updateCoverLetter failed:', err?.message || err);
+    application.error('updateCoverLetter failed', { error: err?.message || err, workflowId });
     return { ok: false };
   }
 }
 
-module.exports = { generateCoverLetter, sendReminder, archiveApplication, updateCoverLetter };
+module.exports = {
+  generateCoverLetter,
+  sendReminder,
+  archiveApplication,
+  updateCoverLetter,
+};

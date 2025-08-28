@@ -4,13 +4,13 @@ const db = require('../database');
 
 async function startServer() {
   const app = express();
-  
+
   // Initialize database
   await db.initializeDatabase();
-  
+
   // Basic middleware
   app.use(express.json());
-  
+
   // Simple health endpoint
   app.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
